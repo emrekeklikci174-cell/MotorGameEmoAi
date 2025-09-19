@@ -1,0 +1,204 @@
+
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EmreAi</title>
+<style>
+body { margin:0; overflow:hidden; background:#87ceeb; font-family:sans-serif; }
+#score, #money { position:absolute; top:10px; left:10px; color:white; font-size:18px; z-index:10; }
+#money { top:30px; color:yellow; }
+#gameOver { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:white; text-align:center; z-index:10; }
+#controls { position:absolute; bottom:10px; width:100%; display:flex; justify-content:space-around; z-index:10; }
+#controls button { width:60px; height:60px; font-size:24px; border:none; border-radius:10px; background:rgba(0,0,0,0.5); color:white; }
+#motorMenu { position:absolute; top:70px; left:10px; background:rgba(0,0,0,0.5); padding:10px; border-radius:8px; color:white; z-index:10; }
+#motorMenu button { margin-top:5px; }
+</style>
+</head>
+<body>
+<div id="score">Skor: 0</div>
+<div id="money">Para: 0</div>
+<div id="gameOver">
+  Oyun Bitti!<br>
+  <button onclick="restartGame()">Tekrar Oyna</button>
+</div>
+
+<div id="controls">
+  <button id="btnLeft"></button>
+  <button id="btnForward"></button>
+  <button id="btnBackward"></button>
+  <button id="btnRight"></button>
+</div>
+
+<div id="motorMenu">
+  <h3>Motor Seç / Satn Al</h3>
+  <div id="motorList"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.0/build/three.min.js"></script>
+<script>
+// --- Global Variables ---
+let scene, camera, renderer;
+let player, obstacles=[], roadSegments=[];
+let speed=0.2, distance=0, score=0, money=0, gameOver=false;
+let laneX=[-2,0,2], currentLane=1;
+let movingForward=false, movingBackward=false;
+
+// --- Motors (düük fiyatl) ---
+const motors=[
+  {name:"Kawasaki H2R", color:0xff0000, price:0, speed:0.2},
+  {name:"Hzl Motor", color:0x00ff00, price:1000, speed:0.3},
+  {name:"Turbo Motor", color:0x0000ff, price:3000, speed:0.4},
+  {name:"Altn Motor", color:0xffd700, price:5000, speed:0.5}
+];
+let ownedMotors=["Kawasaki H2R"];
+let selectedMotor=motors[0];
+
+// --- Scene ---
+scene = new THREE.Scene();
+camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// --- Road ---
+function createRoadSegment(z){
+  const geometry=new THREE.BoxGeometry(10,0.1,20);
+  const material=new THREE.MeshStandardMaterial({color:0x555555});
+  const road=new THREE.Mesh(geometry, material);
+  road.position.z=z;
+  scene.add(road);
+  roadSegments.push(road);
+}
+for(let i=0;i<10;i++) createRoadSegment(-i*20);
+
+// --- Player ---
+function createPlayer(){
+  const geometry=new THREE.BoxGeometry(1,1.5,3);
+  const material=new THREE.MeshStandardMaterial({color:selectedMotor.color});
+  if(player) scene.remove(player);
+  player = new THREE.Mesh(geometry, material);
+  player.position.y=0.75;
+  player.position.x=laneX[currentLane];
+  scene.add(player);
+}
+createPlayer();
+
+// --- Obstacles / Cars ---
+function createObstacle(){
+  const geo=new THREE.BoxGeometry(1.5,1.5,3);
+  const mat=new THREE.MeshStandardMaterial({color:0x0000ff});
+  const obs=new THREE.Mesh(geo, mat);
+  obs.position.y=0.75;
+  let gap = Math.floor(Math.random()*3); // random boluk
+  let lane = Math.floor(Math.random()*3);
+  while(lane===gap) lane=Math.floor(Math.random()*3); // engel boluk dnda
+  obs.position.x=laneX[lane];
+  obs.position.z=-60;
+  scene.add(obs);
+  obstacles.push(obs);
+}
+
+// --- Lighting ---
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+let dirLight=new THREE.DirectionalLight(0xffffff,0.8);
+dirLight.position.set(5,10,7);
+scene.add(dirLight);
+camera.position.y=5;
+camera.position.z=10;
+camera.lookAt(0,0,0);
+
+// --- Motor Menu ---
+function loadMotorMenu(){
+  let div=document.getElementById("motorList");
+  div.innerHTML="";
+  motors.forEach((m,i)=>{
+    let btn=document.createElement("button");
+    btn.innerText=m.name + (ownedMotors.includes(m.name)?" (Sahip)":" - "+m.price+"$");
+    btn.onclick=()=>{
+      if(ownedMotors.includes(m.name)){
+        selectedMotor=m; createPlayer();
+      } else if(money>=m.price){
+        money-=m.price; ownedMotors.push(m.name); selectedMotor=m; createPlayer(); updateUI();
+      } else alert("Yeterli paran yok!");
+      updateUI();
+    };
+    div.appendChild(btn);
+  });
+}
+loadMotorMenu();
+
+// --- PC Controls ---
+document.addEventListener("keydown",(e)=>{
+  if(e.key==="ArrowLeft" || e.key==="a"){ if(currentLane>0){ currentLane--; player.position.x=laneX[currentLane]; } }
+  if(e.key==="ArrowRight" || e.key==="d"){ if(currentLane<2){ currentLane++; player.position.x=laneX[currentLane]; } }
+  if(e.key==="w"){ movingForward=true; }
+  if(e.key==="s"){ movingBackward=true; }
+});
+document.addEventListener("keyup",(e)=>{
+  if(e.key==="w"){ movingForward=false; }
+  if(e.key==="s"){ movingBackward=false; }
+});
+
+// --- Mobile Controls ---
+document.getElementById("btnLeft").addEventListener("touchstart",()=>{ if(currentLane>0){currentLane--; player.position.x=laneX[currentLane];} });
+document.getElementById("btnRight").addEventListener("touchstart",()=>{ if(currentLane<2){currentLane++; player.position.x=laneX[currentLane];} });
+document.getElementById("btnForward").addEventListener("touchstart",()=>{ movingForward=true; });
+document.getElementById("btnForward").addEventListener("touchend",()=>{ movingForward=false; });
+document.getElementById("btnBackward").addEventListener("touchstart",()=>{ movingBackward=true; });
+document.getElementById("btnBackward").addEventListener("touchend",()=>{ movingBackward=false; });
+
+// --- Game Loop ---
+function animate(){
+  if(gameOver) return;
+  requestAnimationFrame(animate);
+
+  // Move road segments
+  roadSegments.forEach(r=>{
+    r.position.z += selectedMotor.speed * (movingBackward?0.5:1) * (movingForward?2:1);
+    if(r.position.z>10) r.position.z-=200;
+  });
+
+  // Move obstacles / cars
+  obstacles.forEach((o,i)=>{
+    o.position.z += selectedMotor.speed * (movingBackward?0.5:1) * (movingForward?2:1);
+    if(o.position.z>10){ scene.remove(o); obstacles.splice(i,1); score++; distance+=1; money+=1000; updateUI(); }
+    if(Math.abs(o.position.z - player.position.z)<1.5 && Math.abs(o.position.x - player.position.x)<1.5){
+      gameOver=true; document.getElementById("gameOver").style.display="block";
+    }
+  });
+
+  if(Math.random()<0.02) createObstacle();
+
+  renderer.render(scene,camera);
+}
+animate();
+
+// --- UI Update ---
+function updateUI(){
+  document.getElementById("score").innerText="Skor: "+score;
+  document.getElementById("money").innerText="Para: "+money;
+  loadMotorMenu();
+}
+
+// --- Restart ---
+function restartGame(){
+  obstacles.forEach(o=>scene.remove(o));
+  obstacles=[]; score=0; distance=0; gameOver=false;
+  player.position.x=laneX[1]; currentLane=1;
+  document.getElementById("score").innerText="Skor: 0";
+  document.getElementById("money").innerText="Para: "+money;
+  document.getElementById("gameOver").style.display="none";
+  animate();
+}
+
+// --- Resize ---
+window.addEventListener("resize",()=>{
+  camera.aspect=window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
